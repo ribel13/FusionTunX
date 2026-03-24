@@ -1,4 +1,4 @@
-name: Build FusionTunX
+name: Build FusionTunX Packages
 
 on:
   workflow_dispatch:
@@ -24,6 +24,14 @@ on:
         description: 'Build OpenWrt ARM64?'
         type: boolean
         default: true
+      #build_openwrt_arm32:
+        #description: 'Build OpenWrt ARM32?'
+        #type: boolean
+        #default: true
+      #build_openwrt_mips:
+        #description: 'Build OpenWrt MIPS?'
+        #type: boolean
+        #default: true
   push:
     branches:
       - main
@@ -180,6 +188,75 @@ jobs:
         with:
           name: fusiontunx-openwrt-${{ matrix.arch }}-${{ matrix.branch }}
           path: output/*
+
+  # Job 3: ARM32 Cortex-A
+  build_openwrt_arm32:
+    if: ${{ github.event_name == 'push' || inputs.build_openwrt_arm32 }}
+    permissions:
+      contents: write
+    name: Build OpenWrt ARM32_${{ matrix.arch }}-${{ matrix.branch }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: [openwrt-24.10, openwrt-25.12]
+        arch:
+          - arm_cortex-a15_neon-vfpv4
+          - arm_cortex-a9
+          - arm_cortex-a7
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Feed Structure
+        run: |
+          mkdir -p feeds/fusiontunx feeds/luci-app-fusiontunx
+          cp -f openwrt/fusiontunx/Makefile feeds/fusiontunx/
+          cp -rf files feeds/fusiontunx/
+          cp -rf openwrt/luci-app-fusiontunx/* feeds/luci-app-fusiontunx/
+
+      - name: Build Package
+        uses: bobbyunknown/gh-action-sdk@main
+        env:
+          ARCH: ${{ matrix.arch }}-${{ matrix.branch }}
+          FEEDNAME: fusiontunx
+          PACKAGES: fusiontunx
+          INDEX: 1
+          NO_SHFMT_CHECK: 1
+          KEY_BUILD: ${{ secrets.SIGNING_KEY_SEC }}
+
+      - name: Organize Artifacts
+        run: |
+          mkdir -p output
+          if [[ "${{ matrix.branch }}" == "openwrt-24.10" ]]; then
+            find bin/packages -name "fusiontunx_*.ipk" -exec cp {} output/ \;
+          else
+            find bin/packages -name "fusiontunx-*.apk" ! -name "luci-app-*" -exec sh -c 'cp "$1" "output/fusiontunx-${{ matrix.arch }}.apk"' sh {} \;
+          fi
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fusiontunx-openwrt-${{ matrix.arch }}-${{ matrix.branch }}
+          path: output/*
+
+  # Job 4: MIPS
+  build_openwrt_mips:
+    if: ${{ github.event_name == 'push' || inputs.build_openwrt_mips }}
+    permissions:
+      contents: write
+    name: Build OpenWrt MIPS_${{ matrix.arch }}-${{ matrix.branch }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: [openwrt-24.10, openwrt-25.12]
+        arch:
+          - mips_24kc
+          - mipsel_74kc
 
     steps:
       - name: Checkout Repository
