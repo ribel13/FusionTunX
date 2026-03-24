@@ -1,4 +1,4 @@
-name: Build FusionTunX Packages
+name: Build FusionTunX
 
 on:
   workflow_dispatch:
@@ -181,23 +181,6 @@ jobs:
           name: fusiontunx-openwrt-${{ matrix.arch }}-${{ matrix.branch }}
           path: output/*
 
-  # Job 3: ARM32 Cortex-A
-  build_openwrt_arm32:
-    if: ${{ github.event_name == 'push' || inputs.build_openwrt_arm32 }}
-    permissions:
-      contents: write
-    name: Build OpenWrt ARM32_${{ matrix.arch }}-${{ matrix.branch }}
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    strategy:
-      fail-fast: false
-      matrix:
-        branch: [openwrt-24.10, openwrt-25.12]
-        arch:
-          - arm_cortex-a15_neon-vfpv4
-          - arm_cortex-a9
-          - arm_cortex-a7
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -222,6 +205,17 @@ jobs:
       - name: Organize Artifacts
         run: |
           mkdir -p output
+          if [[ "${{ matrix.branch }}" == "openwrt-24.10" ]]; then
+            find bin/packages -name "fusiontunx_*.ipk" -exec cp {} output/ \;
+          else
+            find bin/packages -name "fusiontunx-*.apk" ! -name "luci-app-*" -exec sh -c 'cp "$1" "output/fusiontunx-${{ matrix.arch }}.apk"' sh {} \;
+          fi
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fusiontunx-openwrt-${{ matrix.arch }}-${{ matrix.branch }}
+          path: output/*
 
   aggregate_packages:
     needs: [build_packages, build_openwrt_x86, build_openwrt_arm64, build_openwrt_arm32, build_openwrt_mips]
