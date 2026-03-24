@@ -27,49 +27,42 @@ return view.extend({
     render: function (port) {
         var url = 'http://' + window.location.hostname + ':' + port;
 
-        var style = E('style', {}, `
-            @keyframes pulse-violet {
-                0% { box-shadow: 0 0 0 0 rgba(142, 45, 226, 0.7); }
-                70% { box-shadow: 0 0 0 15px rgba(142, 45, 226, 0); }
-                100% { box-shadow: 0 0 0 0 rgba(142, 45, 226, 0); }
-            }
-            .btn-glow {
-                animation: pulse-violet 2s infinite;
-            }
-        `);
+        // CSS KHUSUS UNTUK MEMAKSA DASHBOARD MENJADI TRANSPARAN & MERAH
+        var style = E('style', {}, 
+            'iframe { ' +
+            '  background: transparent !important; ' +
+            '  filter: invert(1) hue-rotate(180deg) opacity(0.8) contrast(1.2); ' + // MEMBALIK WARNA: Putih jadi Gelap, Biru jadi Merah
+            '  mix-blend-mode: screen; ' + // Membuat area gelap menjadi tembus pandang ke wallpaper
+            '  border-radius: 15px; ' +
+            '} ' +
+            '.cbi-section { ' +
+            '  background: rgba(40, 0, 0, 0.6) !important; ' +
+            '  backdrop-filter: blur(10px); ' +
+            '  border: 2px solid #ff0000 !important; ' +
+            '  border-radius: 15px; ' +
+            '} ' +
+            'h3 { color: #ff0000 !important; font-weight: 900 !important; text-transform: uppercase; text-shadow: 2px 2px 4px #000; } ' +
+            'p { color: #ff9999 !important; font-weight: 800 !important; }'
+        );
         document.head.appendChild(style);
 
         var iframe = E('iframe', {
             'src': url,
-            'style': 'width: 100%; min-height: 85vh; border: none; display: none; ' +
-                     'background: rgba(0, 0, 0, 0.2); backdrop-filter: blur(5px); ' +
-                     'border-radius: 15px; opacity: 0.92; ' +
-                     'box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);',
+            'style': 'width: 100%; min-height: 85vh; border: none; display: none;',
             'allowtransparency': 'true',
             'title': 'FusionTunX Dashboard'
         });
 
         var warning = E('div', {
             'class': 'cbi-section',
-            'style': 'display: none; text-align: center; margin-top: 50px; padding: 40px; ' +
-                     'background: rgba(20, 10, 40, 0.5); backdrop-filter: blur(15px); ' +
-                     'border: 1px solid rgba(142, 45, 226, 0.3); border-radius: 20px;'
+            'style': 'display: none; text-align: center; margin-top: 50px; padding: 40px;'
         }, [
-            E('h3', { 
-                'style': 'color: #e0aaff; font-size: 1.8rem; font-weight: 900; text-shadow: 2px 2px 4px rgba(0,0,0,0.6);' 
-            }, _('Service is Not Running')),
-            
-            E('p', { 
-                'style': 'margin: 20px 0 30px; font-weight: 800; color: #ffffff; font-size: 1.1rem; text-shadow: 1px 1px 3px rgba(0,0,0,0.8);' 
-            }, _('The FusionTunX backend service is currently stopped.')),
-            
+            E('h3', {}, _('Service is Not Running')),
+            E('p', { 'style': 'margin: 15px 0 25px;' }, _('The FusionTunX backend service is currently stopped.')),
             E('div', {}, [
                 E('button', {
-                    'class': 'cbi-button cbi-button-action btn-glow', // Menambahkan class animasi
-                    'style': 'background: linear-gradient(135deg, #8E2DE2 0%, #4A00E0 100%); ' +
-                             'border: none; padding: 14px 35px; border-radius: 12px; ' +
-                             'font-weight: 900; color: #fff; cursor: pointer; ' +
-                             'text-transform: uppercase; letter-spacing: 1px;',
+                    'class': 'cbi-button cbi-button-action',
+                    'style': 'background: #ff0000 !important; font-weight: bold;',
                     'click': function () {
                         window.location.href = L.url('admin', 'services', 'fusiontunx', 'server');
                     }
@@ -77,7 +70,7 @@ return view.extend({
             ])
         ]);
 
-        var container = E('div', { 'style': 'background: transparent; padding: 15px;' }, [warning, iframe]);
+        var container = E('div', { 'style': 'background: transparent;' }, [warning, iframe]);
 
         var updateStatus = function () {
             return callServiceList('fusiontunx').then(function (res) {
@@ -109,11 +102,7 @@ return view.extend({
 
         updateStatus();
         poll.add(updateStatus, 3);
-
         return container;
     },
-
-    handleSave: null,
-    handleSaveApply: null,
-    handleReset: null
+    handleSave: null, handleSaveApply: null, handleReset: null
 });
