@@ -1,0 +1,285 @@
+name: Build FusionTunX Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag'
+        required: true
+        default: 'v1.0.0'
+      publish:
+        description: 'Publish to Release?'
+        type: boolean
+        required: true
+        default: true
+      build_debian_arch:
+        description: 'Build Debian/Arch packages?'
+        type: boolean
+        default: true
+      build_openwrt_x86:
+        description: 'Build OpenWrt x86?'
+        type: boolean
+        default: true
+      build_openwrt_arm64:
+        description: 'Build OpenWrt ARM64?'
+        type: boolean
+        default: true
+  push:
+    branches:
+      - main
+      - dev
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# To disable a specific build job, comment out the entire job section below
+
+jobs:
+  build_packages:
+    if: ${{ github.event_name == 'push' || inputs.build_debian_arch }}
+    name: Build Debian/Ubuntu & Arch Linux Packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: sudo apt-get update && sudo apt-get install -y make wget curl unzip tar binutils zstd golang nodejs npm
+
+      - name: Install Swag (Swagger Generator)
+        run: |
+          go install github.com/swaggo/swag/cmd/swag@latest
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: Build All Packages (Debian + Arch)
+        run: make build-all
+
+      - name: Upload Debian Packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: fusiontunx-deb
+          path: build/*.deb
+
+      - name: Upload Arch Linux Packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: fusiontunx-arch
+          path: build/*.pkg.tar.zst
+
+      - name: Upload All Core Binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: fusiontunx-core-binaries
+          path: src/bin/**/*
+
+  # Job 1: x86 architectures
+  build_openwrt_x86:
+    if: ${{ github.event_name == 'push' || inputs.build_openwrt_x86 }}
+    permissions:
+      contents: write
+    name: Build OpenWrt x86_${{ matrix.arch }}-${{ matrix.branch }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: [openwrt-24.10, openwrt-25.12]
+        arch:
+          - x86_64
+          - i386_pentium-mmx
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Feed Structure
+        run: |
+          mkdir -p feeds/fusiontunx feeds/luci-app-fusiontunx
+          cp -f openwrt/fusiontunx/Makefile feeds/fusiontunx/
+          cp -rf files feeds/fusiontunx/
+          cp -rf openwrt/luci-app-fusiontunx/* feeds/luci-app-fusiontunx/
+
+      - name: Build Package
+        uses: bobbyunknown/gh-action-sdk@main
+        env:
+          ARCH: ${{ matrix.arch }}-${{ matrix.branch }}
+          FEEDNAME: fusiontunx
+          PACKAGES: ${{ matrix.arch == 'x86_64' && 'fusiontunx luci-app-fusiontunx' || 'fusiontunx' }}
+          INDEX: 1
+          NO_SHFMT_CHECK: 1
+          KEY_BUILD: ${{ secrets.SIGNING_KEY_SEC }}
+          #V: s
+
+      - name: Organize Artifacts
+        run: |
+          mkdir -p output
+          if [[ "${{ matrix.branch }}" == "openwrt-24.10" ]]; then
+            find bin/packages -name "fusiontunx_*.ipk" -exec cp {} output/ \;
+            find bin/packages -name "luci-app-fusiontunx_*.ipk" -exec cp {} output/ \;
+          else
+            find bin/packages -name "fusiontunx-*.apk" ! -name "luci-app-*" -exec sh -c 'cp "$1" "output/fusiontunx-${{ matrix.arch }}.apk"' sh {} \;
+            find bin/packages -name "luci-app-fusiontunx-*.apk" -exec cp {} output/ \;
+          fi
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fusiontunx-openwrt-${{ matrix.arch }}-${{ matrix.branch }}
+          path: output/*
+
+  # Job 2: ARM64 Cortex-A
+  build_openwrt_arm64:
+    if: ${{ github.event_name == 'push' || inputs.build_openwrt_arm64 }}
+    permissions:
+      contents: write
+    name: Build OpenWrt ARM64_${{ matrix.arch }}-${{ matrix.branch }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: [openwrt-24.10, openwrt-25.12]
+        arch:
+          - aarch64_cortex-a53
+          - aarch64_cortex-a72
+          - aarch64_generic
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Feed Structure
+        run: |
+          mkdir -p feeds/fusiontunx feeds/luci-app-fusiontunx
+          cp -f openwrt/fusiontunx/Makefile feeds/fusiontunx/
+          cp -rf files feeds/fusiontunx/
+          cp -rf openwrt/luci-app-fusiontunx/* feeds/luci-app-fusiontunx/
+
+      - name: Build Package
+        uses: bobbyunknown/gh-action-sdk@main
+        env:
+          ARCH: ${{ matrix.arch }}-${{ matrix.branch }}
+          FEEDNAME: fusiontunx
+          PACKAGES: fusiontunx
+          INDEX: 1
+          NO_SHFMT_CHECK: 1
+          KEY_BUILD: ${{ secrets.SIGNING_KEY_SEC }}
+
+      - name: Organize Artifacts
+        run: |
+          mkdir -p output
+          if [[ "${{ matrix.branch }}" == "openwrt-24.10" ]]; then
+            find bin/packages -name "fusiontunx_*.ipk" -exec cp {} output/ \;
+          else
+            find bin/packages -name "fusiontunx-*.apk" ! -name "luci-app-*" -exec sh -c 'cp "$1" "output/fusiontunx-${{ matrix.arch }}.apk"' sh {} \;
+          fi
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fusiontunx-openwrt-${{ matrix.arch }}-${{ matrix.branch }}
+          path: output/*
+
+  # Job 3: ARM32 Cortex-A
+  build_openwrt_arm32:
+    if: ${{ github.event_name == 'push' || inputs.build_openwrt_arm32 }}
+    permissions:
+      contents: write
+    name: Build OpenWrt ARM32_${{ matrix.arch }}-${{ matrix.branch }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: [openwrt-24.10, openwrt-25.12]
+        arch:
+          - arm_cortex-a15_neon-vfpv4
+          - arm_cortex-a9
+          - arm_cortex-a7
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Feed Structure
+        run: |
+          mkdir -p feeds/fusiontunx feeds/luci-app-fusiontunx
+          cp -f openwrt/fusiontunx/Makefile feeds/fusiontunx/
+          cp -rf files feeds/fusiontunx/
+          cp -rf openwrt/luci-app-fusiontunx/* feeds/luci-app-fusiontunx/
+
+      - name: Build Package
+        uses: bobbyunknown/gh-action-sdk@main
+        env:
+          ARCH: ${{ matrix.arch }}-${{ matrix.branch }}
+          FEEDNAME: fusiontunx
+          PACKAGES: fusiontunx
+          INDEX: 1
+          NO_SHFMT_CHECK: 1
+          KEY_BUILD: ${{ secrets.SIGNING_KEY_SEC }}
+
+      - name: Organize Artifacts
+        run: |
+          mkdir -p output
+
+  aggregate_packages:
+    needs: [build_packages, build_openwrt_x86, build_openwrt_arm64, build_openwrt_arm32, build_openwrt_mips]
+    if: ${{ !cancelled() }}
+    name: Aggregate All Packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download OpenWrt Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: fusiontunx-openwrt-*
+          path: downloaded/openwrt
+          merge-multiple: true
+
+      - name: Download Debian Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: fusiontunx-deb
+          path: downloaded/debian
+
+      - name: Download Arch Linux Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: fusiontunx-arch
+          path: downloaded/arch
+
+      - name: Download Core Binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: fusiontunx-core-binaries
+          path: downloaded/core
+
+      - name: List All Files
+        run: ls -R downloaded
+
+      - name: Upload Combined Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fusiontunx-all-packages
+          path: downloaded/**/*
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v1
+        if: ${{ inputs.publish == true }}
+        with:
+          tag_name: ${{ inputs.tag_name }}
+          body: |
+            # FusionTunX Release ${{ inputs.tag_name }}
+
+            This release contains pre-built packages for OpenWrt, Debian/Ubuntu, Arch Linux, and standalone core binaries.
+
+            ## Package Details
+            - **OpenWrt**: `.ipk` (24.10) and `.apk` (25.12) packages
+            - **Debian/Ubuntu**: `.deb` packages for `amd64`, `arm64`, `armhf`
+            - **Arch Linux**: `.pkg.tar.zst` packages for `x86_64`, `aarch64`, `armv7h`
+            - **Core Binaries**: Standalone binaries for all architectures (useful for other Linux distros)
+
+            See [README](https://github.com/${{ github.repository }}) for full documentation.
+          files: downloaded/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
