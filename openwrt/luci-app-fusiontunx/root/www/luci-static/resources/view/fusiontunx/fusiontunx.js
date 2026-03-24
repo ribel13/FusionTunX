@@ -27,7 +27,6 @@ return view.extend({
     render: function (port) {
         var url = 'http://' + window.location.hostname + ':' + port;
 
-        // Menambahkan CSS Animasi ke dalam dokumen
         var style = E('style', {}, `
             @keyframes pulse-violet {
                 0% { box-shadow: 0 0 0 0 rgba(142, 45, 226, 0.7); }
